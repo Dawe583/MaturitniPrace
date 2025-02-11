@@ -1,10 +1,13 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
-from PIL import Image, ImageTk, ImageEnhance, ImageFilter
+from PIL import Image, ImageTk
 import cv2
 import subprocess
 import threading
 import numpy as np
+import sys
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 class OutputRedirector:
     def __init__(self, text_widget):
