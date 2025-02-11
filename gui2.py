@@ -176,19 +176,24 @@ class ObjectDetectionApp:
     def show_frame(self):
         ret, frame = self.cap.read()
         if ret:
+            # Zde se provádí detekce na každém snímku
+            detections = self.detect_objects_in_frame(frame)
+            # Vykreslení detekcí na snímek
+            self.display_detections_on_frame(frame, detections)
             self.display_image(frame)
             self.root.after(10, self.show_frame)
 
     def show_frame_video(self):
         ret, frame = self.video_capture.read()
         if ret:
+            detections = self.detect_objects_in_frame(frame)
+            self.display_detections_on_frame(frame, detections)
             self.display_image(frame)
             self.root.after(10, self.show_frame_video)
         else:
             self.video_capture.release()
 
     def display_image(self, img):
-        self.original_image = img.copy()  # Uložení originálního obrázku pro úpravy
         canvas_width = self.canvas.winfo_width()
         canvas_height = self.canvas.winfo_height()
 
@@ -200,98 +205,26 @@ class ObjectDetectionApp:
         self.canvas.create_image(canvas_width // 2, canvas_height // 2, image=img_tk)
         self.canvas.image = img_tk  # Prevent garbage collection
 
-    def create_chart(self):
-        self.figure, self.ax = plt.subplots(figsize=(4, 2))  # Menší graf
-        self.chart_canvas = FigureCanvasTkAgg(self.figure, master=self.chart_frame)
-        self.chart_canvas.get_tk_widget().pack(fill="both", expand=True)
-        self.chart_canvas.draw()
-
-    def update_chart(self, detections):
-        self.ax.clear()
-        if detections:
-            labels = [d['object'] for d in detections]
-            values = [d['confidence'] * 100 for d in detections]
-            self.ax.bar(labels, values, color='blue')
-            self.ax.set_ylim(0, 100)
-            self.ax.set_title('Detekce objektů')
-        self.chart_canvas.draw()
-
-    def detect_objects(self):
-        # Příkaz pro přechod do adresáře a spuštění skriptu pro detekci objektů
-        command = "cd /home/pi/examples/lite/examples/object_detection/raspberry_pi && sudo python3 detect.py --model efficientdet_lite0.tflite"
-
-        # Spuštění příkazu v samostatném vlákně, aby GUI zůstalo responzivní
-        def execute_detection():
-            try:
-                process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-                for line in iter(process.stdout.readline, ""):
-                    self.insert_to_console(line)  # Vložit výstup do konzoly
-                for line in iter(process.stderr.readline, ""):
-                    self.insert_to_console(line, error=True)  # Vložit chyby do konzoly
-                process.stdout.close()
-                process.stderr.close()
-                process.wait()
-
-                # Po dokončení detekce načteme výstup a zobrazíme detekce na canvasu
-                detections = self.parse_detections()  # Funkce pro parsování detekcí
-                self.update_chart(detections)
-                self.display_detections_on_canvas(detections)
-
-            except Exception as e:
-                self.insert_to_console(f"[ERROR] {str(e)}", error=True)
-
-        # Spustí detekci v novém vlákně
-        thread = threading.Thread(target=execute_detection)
-        thread.start()
-
-    def parse_detections(self):
-        # Tento kód by měl číst detekce z výstupu modelu (třeba z nějakého souboru nebo stdout)
-        # Pro tento příklad vrací fiktivní detekce s bounding boxy
+    def detect_objects_in_frame(self, frame):
+        # Tady zavoláš svůj detekční model pro konkrétní snímek
+        # Vrací fiktivní detekce pro ukázku
         return [
             {'object': 'Pes', 'confidence': 0.95, 'bbox': (50, 50, 200, 200)},
             {'object': 'Kočka', 'confidence': 0.88, 'bbox': (250, 150, 400, 300)}
         ]
 
-    def display_detections_on_canvas(self, detections):
-        # Načteme výsledky a zobrazíme je na canvasu
+    def display_detections_on_frame(self, frame, detections):
+        # Tento kód vykreslí bounding boxy na základě detekcí na snímku
         for detection in detections:
             label = detection['object']
             confidence = detection['confidence'] * 100
-
-            # Předpokládáme, že detekce obsahují souřadnice bounding boxu (xmin, ymin, xmax, ymax)
             xmin, ymin, xmax, ymax = detection['bbox']
 
-            # Vykreslení bounding boxu na plátno
-            self.canvas.create_rectangle(
-                xmin, ymin, xmax, ymax, outline="red", width=2
-            )
-
-            # Zobrazení textu (label a confidence) nad bounding boxem
-            self.canvas.create_text(
-                xmin, ymin - 10, anchor="sw", text=f"{label}: {confidence:.2f}%", fill="white", font=("Helvetica", 8)
-            )
-
-    def on_button_press(self, event):
-        # Zpracování události kliknutí myši pro výběr oblasti
-        self.rect_start_x = event.x
-        self.rect_start_y = event.y
-
-    def on_mouse_drag(self, event):
-        # Zpracování události tažení myší pro kreslení obdélníku
-        self.canvas.delete("temp_rect")  # Odstraní předchozí obdélník
-        self.canvas.create_rectangle(
-            self.rect_start_x, self.rect_start_y, event.x, event.y,
-            outline="yellow", width=2, tags="temp_rect"
-        )
-
-    def on_button_release(self, event):
-        # Zpracování události uvolnění tlačítka pro dokončení výběru oblasti
-        self.rect_end_x = event.x
-        self.rect_end_y = event.y
-
-        # Tady můžeš přidat logiku pro zachycení vybraného regionu
-        print(f"Výběr oblasti: ({self.rect_start_x}, {self.rect_start_y}) -> ({self.rect_end_x}, {self.rect_end_y})")
-
+            # Vykreslí bounding box
+            cv2.rectangle(frame, (xmin, ymin), (xmax, ymax), (0, 0, 255), 2)
+            # Přidá text s názvem a důvěrou
+            cv2.putText(frame, f"{label}: {confidence:.2f}%", (xmin, ymin - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
 if __name__ == "__main__":
     root = tk.Tk()
