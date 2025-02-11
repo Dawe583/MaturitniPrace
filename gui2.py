@@ -246,43 +246,52 @@ class ObjectDetectionApp:
 
     def parse_detections(self):
         # Tento kód by měl číst detekce z výstupu modelu (třeba z nějakého souboru nebo stdout)
-        # Pro tento příklad vrací fiktivní detekce
-        return [{'object': 'Pes', 'confidence': 0.95}, {'object': 'Kočka', 'confidence': 0.88}]
+        # Pro tento příklad vrací fiktivní detekce s bounding boxy
+        return [
+            {'object': 'Pes', 'confidence': 0.95, 'bbox': (50, 50, 200, 200)},
+            {'object': 'Kočka', 'confidence': 0.88, 'bbox': (250, 150, 400, 300)}
+        ]
 
     def display_detections_on_canvas(self, detections):
         # Načteme výsledky a zobrazíme je na canvasu
         for detection in detections:
             label = detection['object']
             confidence = detection['confidence'] * 100
-            self.canvas.create_text(10, 10, anchor="nw", text=f"{label}: {confidence:.2f}%", fill="white", font=("Helvetica", 12))
 
-    def edit_image(self):
-        # Implementujte funkce pro úpravy obrázků (např. oříznutí, filtr, kontrast)
-        pass
+            # Předpokládáme, že detekce obsahují souřadnice bounding boxu (xmin, ymin, xmax, ymax)
+            xmin, ymin, xmax, ymax = detection['bbox']
+
+            # Vykreslení bounding boxu na plátno
+            self.canvas.create_rectangle(
+                xmin, ymin, xmax, ymax, outline="red", width=2
+            )
+
+            # Zobrazení textu (label a confidence) nad bounding boxem
+            self.canvas.create_text(
+                xmin, ymin - 10, anchor="sw", text=f"{label}: {confidence:.2f}%", fill="white", font=("Helvetica", 8)
+            )
 
     def on_button_press(self, event):
-        self.start_x = event.x
-        self.start_y = event.y
+        # Zpracování události kliknutí myši pro výběr oblasti
+        self.rect_start_x = event.x
+        self.rect_start_y = event.y
 
     def on_mouse_drag(self, event):
-        if self.rect:
-            self.canvas.delete(self.rect)
-        self.rect = self.canvas.create_rectangle(
-            self.start_x, self.start_y, event.x, event.y, outline="red"
+        # Zpracování události tažení myší pro kreslení obdélníku
+        self.canvas.delete("temp_rect")  # Odstraní předchozí obdélník
+        self.canvas.create_rectangle(
+            self.rect_start_x, self.rect_start_y, event.x, event.y,
+            outline="yellow", width=2, tags="temp_rect"
         )
 
     def on_button_release(self, event):
-        self.end_x = event.x
-        self.end_y = event.y
-        if self.rect:
-            self.canvas.delete(self.rect)
-        # Oříznutí obrázku podle vybrané oblasti
-        self.crop_image(self.start_x, self.start_y, self.end_x, self.end_y)
+        # Zpracování události uvolnění tlačítka pro dokončení výběru oblasti
+        self.rect_end_x = event.x
+        self.rect_end_y = event.y
 
-    def crop_image(self, start_x, start_y, end_x, end_y):
-        if self.original_image is not None:
-            cropped = self.original_image[start_y:end_y, start_x:end_x]
-            self.display_image(cropped)
+        # Tady můžeš přidat logiku pro zachycení vybraného regionu
+        print(f"Výběr oblasti: ({self.rect_start_x}, {self.rect_start_y}) -> ({self.rect_end_x}, {self.rect_end_y})")
+
 
 if __name__ == "__main__":
     root = tk.Tk()
