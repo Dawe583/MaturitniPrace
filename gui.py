@@ -170,7 +170,7 @@ class ObjectDetectionApp:
             self.show_frame_video()
 
     def start_camera(self):
-        self.cap = cv2.VideoCapture(0)
+        self.cap = cv2.VideoCapture(2)
         self.show_frame()
 
     def show_frame(self):
