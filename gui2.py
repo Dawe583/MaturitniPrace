@@ -170,30 +170,25 @@ class ObjectDetectionApp:
             self.show_frame_video()
 
     def start_camera(self):
-        self.cap = cv2.VideoCapture(2)
+        self.cap = cv2.VideoCapture(0)  # 0 pro default kameru
         self.show_frame()
 
     def show_frame(self):
         ret, frame = self.cap.read()
         if ret:
-            # Zde se provádí detekce na každém snímku
-            detections = self.detect_objects_in_frame(frame)
-            # Vykreslení detekcí na snímek
-            self.display_detections_on_frame(frame, detections)
             self.display_image(frame)
             self.root.after(10, self.show_frame)
 
     def show_frame_video(self):
         ret, frame = self.video_capture.read()
         if ret:
-            detections = self.detect_objects_in_frame(frame)
-            self.display_detections_on_frame(frame, detections)
             self.display_image(frame)
             self.root.after(10, self.show_frame_video)
         else:
             self.video_capture.release()
 
     def display_image(self, img):
+        self.original_image = img.copy()  # Uložení originálního obrázku pro úpravy
         canvas_width = self.canvas.winfo_width()
         canvas_height = self.canvas.winfo_height()
 
@@ -205,26 +200,54 @@ class ObjectDetectionApp:
         self.canvas.create_image(canvas_width // 2, canvas_height // 2, image=img_tk)
         self.canvas.image = img_tk  # Prevent garbage collection
 
-    def detect_objects_in_frame(self, frame):
-        # Tady zavoláš svůj detekční model pro konkrétní snímek
-        # Vrací fiktivní detekce pro ukázku
-        return [
-            {'object': 'Pes', 'confidence': 0.95, 'bbox': (50, 50, 200, 200)},
-            {'object': 'Kočka', 'confidence': 0.88, 'bbox': (250, 150, 400, 300)}
-        ]
+    def create_chart(self):
+        self.figure, self.ax = plt.subplots(figsize=(4, 2))  # Menší graf
+        self.chart_canvas = FigureCanvasTkAgg(self.figure, master=self.chart_frame)
+        self.chart_canvas.get_tk_widget().pack(fill="both", expand=True)
+        self.chart_canvas.draw()
 
-    def display_detections_on_frame(self, frame, detections):
-        # Tento kód vykreslí bounding boxy na základě detekcí na snímku
+    def update_chart(self, detections):
+        self.ax.clear()
+        if detections:
+            labels = [d['object'] for d in detections]
+            values = [d['confidence'] * 100 for d in detections]
+            self.ax.bar(labels, values, color='blue')
+            self.ax.set_ylim(0, 100)
+            self.ax.set_title('Detekce objektů')
+        self.chart_canvas.draw()
+
+    def detect_objects(self):
+        # Tento příklad používá fiktivní detekce objektů
+        detections = [{'object': 'Pes', 'confidence': 0.95}, {'object': 'Kočka', 'confidence': 0.88}]
+        self.update_chart(detections)
+        self.display_detections_on_canvas(detections)
+
+    def display_detections_on_canvas(self, detections):
+        # Načteme výsledky a zobrazíme je na canvasu
         for detection in detections:
             label = detection['object']
             confidence = detection['confidence'] * 100
-            xmin, ymin, xmax, ymax = detection['bbox']
+            self.canvas.create_text(10, 10, anchor="nw", text=f"{label}: {confidence:.2f}%", fill="white", font=("Helvetica", 12))
 
-            # Vykreslí bounding box
-            cv2.rectangle(frame, (xmin, ymin), (xmax, ymax), (0, 0, 255), 2)
-            # Přidá text s názvem a důvěrou
-            cv2.putText(frame, f"{label}: {confidence:.2f}%", (xmin, ymin - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+    def edit_image(self):
+        # Tato metoda je volána, když uživatel chce upravit obrázek
+        # Příklad úpravy: otočení obrázku
+        if hasattr(self, 'image'):
+            self.image = cv2.rotate(self.image, cv2.ROTATE_90_CLOCKWISE)
+            self.display_image(self.image)
+
+    def on_button_press(self, event):
+        self.start_x = event.x
+        self.start_y = event.y
+
+    def on_mouse_drag(self, event):
+        self.canvas.delete("rect")
+        self.rect = self.canvas.create_rectangle(self.start_x, self.start_y, event.x, event.y, outline="red")
+
+    def on_button_release(self, event):
+        self.end_x = event.x
+        self.end_y = event.y
+        self.canvas.create_rectangle(self.start_x, self.start_y, self.end_x, self.end_y, outline="red")
 
 if __name__ == "__main__":
     root = tk.Tk()
