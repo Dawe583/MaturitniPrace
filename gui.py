@@ -1,13 +1,12 @@
 import tkinter as tk
-from tkinter import filedialog, messagebox, simpledialog
-from PIL import Image, ImageTk, ImageEnhance, ImageFilter
+from tkinter import filedialog, messagebox
+from PIL import Image, ImageTk
 import cv2
 import subprocess
 import threading
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import sys
 import numpy as np
+import tensorflow as tf
 
 class OutputRedirector:
     def __init__(self, text_widget):
@@ -106,13 +105,16 @@ class ObjectDetectionApp:
         )
         self.edit_image_btn.pack(fill="x", pady=5)
 
+        # Inicializace TensorFlow Lite modelu pro detekci objektů
+        self.interpreter = tf.lite.Interpreter(model_path="efficientdet_lite0.tflite")
+        self.interpreter.allocate_tensors()
+
         # Rámec pro graf pod tlačítky
         self.chart_frame = tk.Frame(self.controls_frame, bg=bg_color)
         self.chart_frame.pack(fill="both", expand=True, pady=10)
 
-        # Inicializace grafu
+        self.rect = None  # Inicializace proměnné pro výběr oblasti
         self.create_chart()
-        self.update_chart([])  # Inicializace prázdného grafu
 
         # Přidání události pro výběr oblasti
         self.canvas.bind("<ButtonPress-1>", self.on_button_press)
@@ -177,12 +179,14 @@ class ObjectDetectionApp:
         ret, frame = self.cap.read()
         if ret:
             self.display_image(frame)
+            self.detect_objects(frame)  # Detekce objektů na každém snímku
             self.root.after(10, self.show_frame)
 
     def show_frame_video(self):
         ret, frame = self.video_capture.read()
         if ret:
             self.display_image(frame)
+            self.detect_objects(frame)  # Detekce objektů na každém snímku
             self.root.after(10, self.show_frame_video)
         else:
             self.video_capture.release()
@@ -201,12 +205,14 @@ class ObjectDetectionApp:
         self.canvas.image = img_tk  # Prevent garbage collection
 
     def create_chart(self):
+        # Vytvoření základního grafu
         self.figure, self.ax = plt.subplots(figsize=(4, 2))  # Menší graf
         self.chart_canvas = FigureCanvasTkAgg(self.figure, master=self.chart_frame)
         self.chart_canvas.get_tk_widget().pack(fill="both", expand=True)
         self.chart_canvas.draw()
 
     def update_chart(self, detections):
+        # Aktualizace dat v grafu
         self.ax.clear()
         if detections:
             labels = [d['object'] for d in detections]
@@ -216,57 +222,80 @@ class ObjectDetectionApp:
             self.ax.set_title('Detekce objektů')
         self.chart_canvas.draw()
 
-    def detect_objects(self):
-        # Příkaz pro přechod do adresáře a spuštění skriptu pro detekci objektů
-        command = "cd /home/pi/examples/lite/examples/object_detection/raspberry_pi && sudo python3 detect.py --model efficientdet_lite0.tflite"
+    def detect_objects(self, frame=None):
+        # Provedení detekce objektů na obrázku nebo video snímku
+        if frame is None:
+            return
+        
+        # Předzpracování snímku
+        input_tensor = self.process_image(frame)
 
-        # Spuštění příkazu v samostatném vlákně, aby GUI zůstalo responzivní
-        def execute_detection():
-            try:
-                process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-                for line in iter(process.stdout.readline, ""):
-                    self.insert_to_console(line)  # Vložit výstup do konzoly
-                for line in iter(process.stderr.readline, ""):
-                    self.insert_to_console(line, error=True)  # Vložit chyby do konzoly
-                process.stdout.close()
-                process.stderr.close()
-                process.wait()
-            except Exception as e:
-                self.insert_to_console(f"[ERROR] {str(e)}", error=True)
+        # Provádění inference
+        self.interpreter.set_tensor(self.interpreter.get_input_details()[0]['index'], input_tensor)
+        self.interpreter.invoke()
 
-        # Spustí detekci v novém vlákně
-        thread = threading.Thread(target=execute_detection)
-        thread.start()
+        # Získání výsledků
+        boxes = self.interpreter.get_tensor(self.interpreter.get_output_details()[0]['index'])[0]  # kořeny ohraničujících boxů
+        class_ids = self.interpreter.get_tensor(self.interpreter.get_output_details()[1]['index'])[0]  # ID tříd
+        scores = self.interpreter.get_tensor(self.interpreter.get_output_details()[2]['index'])[0]  # skóre detekcí
 
-    def edit_image(self):
-        # Implementujte funkce pro úpravy obrázků (např. oříznutí, filtr, kontrast)
-        pass
+        # Filtrace detekcí na základě prahu skóre
+        detections = []
+        for i in range(len(scores)):
+            if scores[i] > 0.5:  # Threshold pro detekci
+                detections.append({
+                    'object': str(class_ids[i]),  # ID třídy
+                    'confidence': scores[i],
+                    'box': boxes[i]  # Koordináty boxu
+                })
+
+        # Aktualizace grafu a zobrazení detekcí na canvasu
+        self.update_chart(detections)
+        self.display_detections(frame, detections)
+
+    def process_image(self, frame):
+        # Předzpracování snímku pro TensorFlow Lite model
+        img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        img_resized = cv2.resize(img_rgb, (300, 300))  # Změna velikosti podle modelu
+        input_tensor = np.expand_dims(img_resized, axis=0)
+        input_tensor = np.asarray(input_tensor, dtype=np.float32)
+        return input_tensor
+
+    def display_detections(self, frame, detections):
+        # Zobrazení detekcí na obrazovce
+        for detection in detections:
+            ymin, xmin, ymax, xmax = detection['box']
+            start_point = (int(xmin * frame.shape[1]), int(ymin * frame.shape[0]))
+            end_point = (int(xmax * frame.shape[1]), int(ymax * frame.shape[0]))
+            cv2.rectangle(frame, start_point, end_point, (0, 255, 0), 2)
+
+        # Převod zpět do formátu pro Tkinter
+        self.display_image(frame)
 
     def on_button_press(self, event):
         self.start_x = event.x
         self.start_y = event.y
 
     def on_mouse_drag(self, event):
-        if self.rect:
-            self.canvas.delete(self.rect)
-        self.rect = self.canvas.create_rectangle(
-            self.start_x, self.start_y, event.x, event.y, outline="red"
-        )
+        self.canvas.delete("selection")
+        self.canvas.create_rectangle(self.start_x, self.start_y, event.x, event.y, outline="blue", width=2, tags="selection")
 
     def on_button_release(self, event):
         self.end_x = event.x
         self.end_y = event.y
-        if self.rect:
-            self.canvas.delete(self.rect)
-        # Oříznutí obrázku podle vybrané oblasti
-        self.crop_image(self.start_x, self.start_y, self.end_x, self.end_y)
+        self.canvas.delete("selection")
+        self.canvas.create_rectangle(self.start_x, self.start_y, self.end_x, self.end_y, outline="blue", width=2)
+        print(f"Výběr oblasti: ({self.start_x}, {self.start_y}) -> ({self.end_x}, {self.end_y})")
 
-    def crop_image(self, start_x, start_y, end_x, end_y):
-        if self.original_image is not None:
-            cropped = self.original_image[start_y:end_y, start_x:end_x]
-            self.display_image(cropped)
+    def close_application(self):
+        if hasattr(self, "cap"):
+            self.cap.release()
+        if hasattr(self, "video_capture"):
+            self.video_capture.release()
+        self.root.quit()
 
 if __name__ == "__main__":
     root = tk.Tk()
     app = ObjectDetectionApp(root)
+    root.protocol("WM_DELETE_WINDOW", app.close_application)
     root.mainloop()
