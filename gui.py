@@ -9,6 +9,7 @@ import sys
 import torch
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.pyplot as plt
+from ultralytics import DetectionModel
 
 class OutputRedirector:
     def __init__(self, text_widget):
@@ -125,9 +126,9 @@ class ObjectDetectionApp:
         root.grid_columnconfigure(0, weight=3)  # 3/5 pro obrazovku
         root.grid_columnconfigure(1, weight=2)  # 2/5 pro ovládací panel
 
-        # Načítání vlastního modelu YOLOv8n z cesty
-        self.model = torch.load('/home/pi/maturitniprace/yolov8n.pt')
-        self.model.eval()
+        # Inicializace YOLO modelu
+        torch.serialization.add_safe_globals([DetectionModel])  # Povolení přizpůsobených tříd
+        self.model = torch.load('/home/pi/maturitniprace/yolov8n.pt', weights_only=False)
 
     def redirect_console_output(self):
         # Přesměrování konzolového výstupu do Text widgetu
@@ -206,57 +207,49 @@ class ObjectDetectionApp:
         self.canvas.image = img_tk  # Prevent garbage collection
 
     def create_chart(self):
-        self.figure, self.ax = plt.subplots(figsize=(4, 2))  # Menší graf
-        self.chart_canvas = FigureCanvasTkAgg(self.figure, master=self.chart_frame)
+        # Inicializace grafu
+        self.fig, self.ax = plt.subplots(figsize=(4, 3))
+        self.ax.set_title("Graf")
+        self.chart_canvas = FigureCanvasTkAgg(self.fig, master=self.chart_frame)
         self.chart_canvas.get_tk_widget().pack(fill="both", expand=True)
-        self.chart_canvas.draw()
 
-    def update_chart(self, detections):
+    def update_chart(self, data):
         self.ax.clear()
-        if detections:
-            labels = [d['object'] for d in detections]
-            values = [d['confidence'] * 100 for d in detections]
-            self.ax.bar(labels, values, color='blue')
-            self.ax.set_ylim(0, 100)
-            self.ax.set_title('Detekce objektů')
+        self.ax.bar(range(len(data)), data)
         self.chart_canvas.draw()
 
     def detect_objects(self):
-        ret, frame = self.cap.read()
-        if ret:
-            results = self.model(frame)  # Použijeme YOLO model
-            detections = results.pandas().xywh[0].to_dict(orient="records")
-            self.update_chart(detections)
-            self.display_detections_on_canvas(detections)
-
-    def display_detections_on_canvas(self, detections):
-        # Načteme výsledky a zobrazíme je na canvasu
-        for detection in detections:
-            label = detection['name']
-            confidence = detection['confidence'] * 100
-            self.canvas.create_text(10, 10, anchor="nw", text=f"{label}: {confidence:.2f}%", fill="white", font=("Helvetica", 12))
+        # Pro detekci objektů ve snímku
+        if hasattr(self, 'image'):
+            results = self.model(self.image)
+            results.render()  # Vykreslení bounding boxů na obrázku
+            self.display_image(results.ims[0])  # Zobrazení obrázku s bounding boxy
+        else:
+            messagebox.showerror("Chyba", "Žádný obrázek nebyl načten.")
 
     def edit_image(self):
-        # Tato metoda je volána, když uživatel chce upravit obrázek
-        # Příklad úpravy: otočení obrázku
-        if hasattr(self, 'image'):
-            self.image = cv2.rotate(self.image, cv2.ROTATE_90_CLOCKWISE)
-            self.display_image(self.image)
+        # Funkce pro úpravy obrázku
+        messagebox.showinfo("Úpravy obrázku", "Tato funkce není zatím implementována.")
 
     def on_button_press(self, event):
-        self.start_x = event.x
-        self.start_y = event.y
+        # Funkce pro zachycení tlačítka myši
+        self.rect_start = (event.x, event.y)
 
     def on_mouse_drag(self, event):
+        # Funkce pro pohyb myši
         self.canvas.delete("rect")
-        self.rect = self.canvas.create_rectangle(self.start_x, self.start_y, event.x, event.y, outline="red")
+        self.rect_end = (event.x, event.y)
+        self.canvas.create_rectangle(
+            self.rect_start[0], self.rect_start[1], self.rect_end[0], self.rect_end[1],
+            outline="red", width=2, tags="rect"
+        )
 
     def on_button_release(self, event):
-        self.end_x = event.x
-        self.end_y = event.y
-        self.canvas.create_rectangle(self.start_x, self.start_y, self.end_x, self.end_y, outline="red")
+        # Funkce pro uvolnění tlačítka myši
+        self.rect_end = (event.x, event.y)
+        print(f"Selected Area: {self.rect_start} to {self.rect_end}")
 
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = ObjectDetectionApp(root)
-    root.mainloop()
+# Inicializace GUI aplikace
+root = tk.Tk()
+app = ObjectDetectionApp(root)
+root.mainloop()
