@@ -125,8 +125,9 @@ class ObjectDetectionApp:
         root.grid_columnconfigure(0, weight=3)  # 3/5 pro obrazovku
         root.grid_columnconfigure(1, weight=2)  # 2/5 pro ovládací panel
 
-        # Inicializace YOLO modelu
-        self.model = torch.hub.load('ultralytics/yolov5', 'yolov8n', pretrained=True)
+        # Načítání vlastního modelu YOLOv8n z cesty
+        self.model = torch.load('/home/pi/maturitniprace/yolov8n.pt')
+        self.model.eval()
 
     def redirect_console_output(self):
         # Přesměrování konzolového výstupu do Text widgetu
