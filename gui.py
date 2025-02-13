@@ -2,11 +2,13 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
 from PIL import Image, ImageTk
 import cv2
-import torch
+import subprocess
+import threading
 import numpy as np
 import sys
-import matplotlib.pyplot as plt
+import torch
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import matplotlib.pyplot as plt
 
 class OutputRedirector:
     def __init__(self, text_widget):
@@ -24,16 +26,16 @@ class ObjectDetectionApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Rozpoznávání Objektů")
-        self.root.geometry("700x400")
-        self.root.minsize(700, 400)
+        self.root.geometry("700x400")  # Velikost okna
+        self.root.minsize(700, 400)  # Minimální velikost okna
 
         # Barevné schéma
         bg_color = "#f5f5f5"
         frame_bg_color = "#ffffff"
         accent_color = "#3a7bd5"
         text_color = "#333333"
-        font_primary = ("Helvetica", 8)
-        font_secondary = ("Helvetica", 6)
+        font_primary = ("Helvetica", 8)  # Zmenšení písma pro ovládací prvky
+        font_secondary = ("Helvetica", 6)  # Menší písmo pro textové komponenty
         font_bold = ("Helvetica", 8, "bold")
 
         self.root.configure(bg=bg_color)
@@ -69,7 +71,7 @@ class ObjectDetectionApp:
         self.redirect_console_output()
 
         # Ovládací panel a graf
-        self.controls_frame = tk.Frame(root, bg=bg_color, width=120)
+        self.controls_frame = tk.Frame(root, bg=bg_color, width=120)  # Zúžený ovládací panel
         self.controls_frame.grid(row=1, column=1, padx=10, pady=10, sticky="ns")
 
         # Tlačítka pro načítání obrázku a videa
@@ -105,30 +107,36 @@ class ObjectDetectionApp:
         )
         self.edit_image_btn.pack(fill="x", pady=5)
 
-        # Přidání možnosti nastavení prahu pro detekci
-        self.confidence_threshold = tk.Scale(
-            self.controls_frame, from_=0, to=100, orient="horizontal", label="Prahová hodnota detekce (%)",
-            bg=bg_color, fg="black", font=font_secondary
-        )
-        self.confidence_threshold.set(50)
-        self.confidence_threshold.pack(fill="x", pady=5)
+        # Rámec pro graf pod tlačítky
+        self.chart_frame = tk.Frame(self.controls_frame, bg=bg_color)
+        self.chart_frame.pack(fill="both", expand=True, pady=10)
 
-        # Inicializace YOLO modelu
-        self.model = torch.hub.load("ultralytics/yolov5", "custom", path="yolov8n.pt")
-        
+        # Inicializace grafu
+        self.create_chart()
+        self.update_chart([])  # Inicializace prázdného grafu
+
+        # Přidání události pro výběr oblasti
+        self.canvas.bind("<ButtonPress-1>", self.on_button_press)
+        self.canvas.bind("<B1-Motion>", self.on_mouse_drag)
+        self.canvas.bind("<ButtonRelease-1>", self.on_button_release)
+
         # Nastavení váhy sloupců
         root.grid_rowconfigure(1, weight=1)
         root.grid_columnconfigure(0, weight=3)  # 3/5 pro obrazovku
         root.grid_columnconfigure(1, weight=2)  # 2/5 pro ovládací panel
 
+        # Inicializace YOLO modelu
+        self.model = torch.hub.load('ultralytics/yolov5', 'yolov8n', pretrained=True)
+
     def redirect_console_output(self):
         # Přesměrování konzolového výstupu do Text widgetu
         sys.stdout = OutputRedirector(self.console_output)
-        self.run_command("echo Připojení k systému úspěšné")
+        self.run_command("echo Připojení k systému úspěšné")  # Simulace příkazu pro zobrazení výstupu
 
     def run_command(self, command):
+        # Spustí příkaz v bash a vypisuje jeho výstup do konzolového widgetu
         def execute():
-            process = subprocess.Popen(["powershell", "-Command", command], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            process = subprocess.Popen(["bash", "-c", command], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             for line in iter(process.stdout.readline, ""):
                 self.insert_to_console(line)
             for line in iter(process.stderr.readline, ""):
@@ -141,10 +149,12 @@ class ObjectDetectionApp:
         thread.start()
 
     def insert_to_console(self, line, error=False):
+        # Vložení výstupu do konzolového widgetu
         self.root.after(0, lambda: self.console_output.insert(tk.END, line if not error else f"[ERROR] {line}", "error" if error else None))
         self.root.after(0, lambda: self.console_output.see(tk.END))
 
     def execute_command(self, event):
+        # Získá příkaz od uživatele a spustí ho v bash
         command = self.console_input.get()
         if command.strip():
             self.console_output.insert(tk.END, f"> {command}\n")
@@ -164,41 +174,25 @@ class ObjectDetectionApp:
             self.show_frame_video()
 
     def start_camera(self):
-        self.cap = cv2.VideoCapture(0)
+        self.cap = cv2.VideoCapture(0)  # 0 pro default kameru
         self.show_frame()
 
     def show_frame(self):
         ret, frame = self.cap.read()
         if ret:
-            self.detect_and_display(frame)
+            self.display_image(frame)
             self.root.after(10, self.show_frame)
 
     def show_frame_video(self):
         ret, frame = self.video_capture.read()
         if ret:
-            self.detect_and_display(frame)
+            self.display_image(frame)
             self.root.after(10, self.show_frame_video)
         else:
             self.video_capture.release()
 
-    def detect_and_display(self, frame):
-        # Detekce objektů
-        results = self.model(frame)
-        detections = results.xywh[0].numpy()  # Detekce ve formátu [x, y, width, height, confidence]
-        
-        # Prahování
-        threshold = self.confidence_threshold.get() / 100.0
-        for detection in detections:
-            confidence = detection[4]
-            if confidence >= threshold:
-                x, y, w, h = detection[:4]
-                cv2.rectangle(frame, (int(x - w / 2), int(y - h / 2)), (int(x + w / 2), int(y + h / 2)), (255, 0, 0), 2)
-                cv2.putText(frame, f"{results.names[int(detection[5])]} {confidence*100:.2f}%", 
-                            (int(x - w / 2), int(y - h / 2) - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
-
-        self.display_image(frame)
-
     def display_image(self, img):
+        self.original_image = img.copy()  # Uložení originálního obrázku pro úpravy
         canvas_width = self.canvas.winfo_width()
         canvas_height = self.canvas.winfo_height()
 
@@ -210,10 +204,56 @@ class ObjectDetectionApp:
         self.canvas.create_image(canvas_width // 2, canvas_height // 2, image=img_tk)
         self.canvas.image = img_tk  # Prevent garbage collection
 
+    def create_chart(self):
+        self.figure, self.ax = plt.subplots(figsize=(4, 2))  # Menší graf
+        self.chart_canvas = FigureCanvasTkAgg(self.figure, master=self.chart_frame)
+        self.chart_canvas.get_tk_widget().pack(fill="both", expand=True)
+        self.chart_canvas.draw()
+
+    def update_chart(self, detections):
+        self.ax.clear()
+        if detections:
+            labels = [d['object'] for d in detections]
+            values = [d['confidence'] * 100 for d in detections]
+            self.ax.bar(labels, values, color='blue')
+            self.ax.set_ylim(0, 100)
+            self.ax.set_title('Detekce objektů')
+        self.chart_canvas.draw()
+
+    def detect_objects(self):
+        ret, frame = self.cap.read()
+        if ret:
+            results = self.model(frame)  # Použijeme YOLO model
+            detections = results.pandas().xywh[0].to_dict(orient="records")
+            self.update_chart(detections)
+            self.display_detections_on_canvas(detections)
+
+    def display_detections_on_canvas(self, detections):
+        # Načteme výsledky a zobrazíme je na canvasu
+        for detection in detections:
+            label = detection['name']
+            confidence = detection['confidence'] * 100
+            self.canvas.create_text(10, 10, anchor="nw", text=f"{label}: {confidence:.2f}%", fill="white", font=("Helvetica", 12))
+
     def edit_image(self):
+        # Tato metoda je volána, když uživatel chce upravit obrázek
+        # Příklad úpravy: otočení obrázku
         if hasattr(self, 'image'):
             self.image = cv2.rotate(self.image, cv2.ROTATE_90_CLOCKWISE)
             self.display_image(self.image)
+
+    def on_button_press(self, event):
+        self.start_x = event.x
+        self.start_y = event.y
+
+    def on_mouse_drag(self, event):
+        self.canvas.delete("rect")
+        self.rect = self.canvas.create_rectangle(self.start_x, self.start_y, event.x, event.y, outline="red")
+
+    def on_button_release(self, event):
+        self.end_x = event.x
+        self.end_y = event.y
+        self.canvas.create_rectangle(self.start_x, self.start_y, self.end_x, self.end_y, outline="red")
 
 if __name__ == "__main__":
     root = tk.Tk()
