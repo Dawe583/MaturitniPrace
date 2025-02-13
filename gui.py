@@ -9,7 +9,7 @@ import sys
 import torch
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.pyplot as plt
-from ultralytics import DetectionModel
+from ultralytics import YOLO  # Použití YOLO pro načtení modelu
 
 class OutputRedirector:
     def __init__(self, text_widget):
@@ -127,8 +127,7 @@ class ObjectDetectionApp:
         root.grid_columnconfigure(1, weight=2)  # 2/5 pro ovládací panel
 
         # Inicializace YOLO modelu
-        torch.serialization.add_safe_globals([DetectionModel])  # Povolení přizpůsobených tříd
-        self.model = torch.load('/home/pi/maturitniprace/yolov8n.pt', weights_only=False)
+        self.model = YOLO('/home/pi/maturitniprace/yolov8n.pt')  # Použití YOLO pro načítání modelu
 
     def redirect_console_output(self):
         # Přesměrování konzolového výstupu do Text widgetu
