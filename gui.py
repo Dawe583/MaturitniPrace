@@ -180,11 +180,17 @@ class ObjectDetectionApp:
         self.process_video()
 
     def process_video(self):
-        # Zpracování videa a zobrazení na plátno
+        # Zpracování videa a detekce objektů
         if hasattr(self, "capture"):
             ret, frame = self.capture.read()
             if ret:
+                # Detekce objektů na snímku
+                results = self.model(frame)
+                frame = results.render()[0]  # Získání rámců s detekovanými objekty
+
+                # Zobrazení výsledku na plátno
                 self.display_image(frame)
+
                 self.root.after(10, self.process_video)
 
     def display_image(self, image):
@@ -206,47 +212,40 @@ class ObjectDetectionApp:
     def edit_image(self):
         # Funkce pro úpravy obrázku
         if hasattr(self, "image"):
-            self.image = cv2.cvtColor(self.image, cv2.COLOR_BGR2GRAY)
-            self.display_image(self.image)
+            self.image = cv2.cvtColor(self.image, cv2.COLOR_BGR2RGB)
+            self.image = Image.fromarray(self.image)
+            self.image.show()  # Zobrazení upraveného obrázku
         else:
             messagebox.showerror("Chyba", "Nejdříve načtěte obrázek!")
-
+    
     def create_chart(self):
-        # Vytvoření základního grafu
-        self.figure = plt.Figure(figsize=(5, 5), dpi=100)
-        self.chart = self.figure.add_subplot(111)
-        self.chart.set_title("Ukázkový graf")
+        # Vytvoření grafu pro ovládací panel
+        self.fig, self.ax = plt.subplots(figsize=(3, 2), dpi=80)
+        self.ax.set_facecolor("#f0f0f0")
+        self.ax.set_title("Ukázkový graf", fontsize=8)
 
     def update_chart(self, data):
         # Aktualizace grafu
-        self.chart.clear()
-        self.chart.plot(data)
-        self.chart.set_title("Ukázkový graf")
-        self.canvas_chart = FigureCanvasTkAgg(self.figure, self.chart_frame)
-        self.canvas_chart.get_tk_widget().pack(fill="both", expand=True)
+        self.ax.clear()
+        self.ax.plot(data, color='blue', linewidth=2)
+        self.fig.canvas.draw()
 
     def on_button_press(self, event):
-        # Akce při stisknutí tlačítka myši
-        self.start_x = event.x
-        self.start_y = event.y
+        # Zachycení stisknutí tlačítka pro výběr oblasti
+        self.x1, self.y1 = event.x, event.y
 
     def on_mouse_drag(self, event):
-        # Akce při tažení myši
-        self.end_x = event.x
-        self.end_y = event.y
-        self.canvas.create_rectangle(
-            self.start_x, self.start_y, self.end_x, self.end_y, outline="red", width=2
-        )
+        # Zachycení táhnutí myši pro výběr oblasti
+        self.x2, self.y2 = event.x, event.y
+        self.canvas.delete("rect")
+        self.canvas.create_rectangle(self.x1, self.y1, self.x2, self.y2, outline="red", tags="rect")
 
     def on_button_release(self, event):
-        # Akce při puštění tlačítka myši
-        self.end_x = event.x
-        self.end_y = event.y
-        self.canvas.create_rectangle(
-            self.start_x, self.start_y, self.end_x, self.end_y, outline="green", width=2
-        )
+        # Zachycení uvolnění tlačítka pro dokončení výběru oblasti
+        self.x2, self.y2 = event.x, event.y
+        self.canvas.create_rectangle(self.x1, self.y1, self.x2, self.y2, outline="red")
 
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = ObjectDetectionApp(root)
-    root.mainloop()
+# Vytvoření hlavního okna aplikace
+root = tk.Tk()
+app = ObjectDetectionApp(root)
+root.mainloop()
