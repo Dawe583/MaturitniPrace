@@ -1,21 +1,45 @@
-MIT License
+def process_video(self):
+    if hasattr(self, "capture"):
+        ret, frame = self.capture.read()
+        if ret:
+            # Object detection on the frame
+            results = self.model(frame)
 
-Copyright (c) 2024 David Sak
+            # Check if results are available
+            if results:
+                # Extract bounding boxes and labels
+                boxes = results.xyxy[0]  # Get the first result (for the first image)
+                for box in boxes:
+                    x1, y1, x2, y2, conf, cls = box  # Unpack the box
+                    # Draw the bounding box on the frame
+                    cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), (255, 0, 0), 2)  # Draw rectangle
+                    cv2.putText(frame, f'{self.model.names[int(cls)]} {conf:.2f}', (int(x1), int(y1) - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)  # Draw label
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+            # Display the result on the canvas
+            self.display_image(frame)
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+            # Schedule the next frame processing
+            self.root.after(10, self.process_video)
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+
+
+def detect_objects(self):
+    # Recognize objects in the image
+    if hasattr(self, "image"):
+        results = self.model(self.image)
+        if results:
+            boxes = results.xyxy[0]  # Get the first result (for the first image)
+            for box in boxes:
+                x1, y1, x2, y2, conf, cls = box  # Unpack the box
+                # Draw the bounding box on the image
+                cv2.rectangle(self.image, (int(x1), int(y1)), (int(x2), int(y2)), (255, 0, 0), 2)  # Draw rectangle
+                cv2.putText(self.image, f'{self.model.names[int(cls)]} {conf:.2f}', (int(x1), int(y1) - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)  # Draw label
+
+            # Display the detected image
+            self.display_image(self.image)
+        else:
+            messagebox.showerror("Chyba", "Žádné objekty nebyly detekovány.")
+    else:
+        messagebox.showerror("Chyba", "Nejdříve načtěte obrázek nebo video!")
