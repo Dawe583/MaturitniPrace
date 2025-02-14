@@ -126,7 +126,15 @@ class ObjectDetectionApp:
         root.grid_columnconfigure(1, weight=2)  # 2/5 pro ovládací panel
 
         # Inicializace YOLO modelu
-        self.model = torch.hub.load('/home/pi/maturitniprace/yolov8n.pt', 'custom')  # Načtení modelu
+        self.load_model()  # Načtení modelu
+
+    def load_model(self):
+        try:
+            self.model = torch.hub.load('ultralytics/yolov5', 'custom', path='/home/pi/maturitniprace/yolov8n.pt')  # Upravte podle potřeby
+            self.model.eval()  # Nastavení modelu do evaluačního režimu
+            print("Model byl úspěšně načten.")
+        except Exception as e:
+            messagebox.showerror("Chyba", f"Nepodařilo se načíst model: {e}")
 
     def redirect_console_output(self):
         # Přesměrování konzolového výstupu do Text widgetu
@@ -186,10 +194,11 @@ class ObjectDetectionApp:
             if ret:
                 # Detekce objektů na snímku
                 results = self.model(frame)
-                frame = results.render()[0]  # Získání rámců s detekovanými objekty
+                # Získání prvního rámce s detekovanými objekty
+                detected_image = results.render()[0]  # Získání prvního rámce s detekovanými objekty
 
                 # Zobrazení výsledku na plátno
-                self.display_image(frame)
+                self.display_image(detected_image)
 
                 self.root.after(10, self.process_video)
 
