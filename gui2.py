@@ -221,7 +221,7 @@ class ObjectDetectionApp:
         if hasattr(self, "image"):
             results = self.model(self.image)
             # Získání prvního obrázku z výsledků
-            if results:
+            if results and len(results) > 0:  # Kontrola, zda jsou detekce
                 detected_image = results.render()[0]  # Získání prvního rámce s detekovanými objekty
                 self.display_image(detected_image)  # Zobrazení detekovaného obrázku
             else:
