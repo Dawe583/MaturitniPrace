@@ -201,7 +201,7 @@ class ObjectDetectionApp:
         # Změna velikosti obrázku na velikost plátna
         canvas_width = self.canvas.winfo_width()
         canvas_height = self.canvas.winfo_height()
-        image = image.resize((canvas_width, canvas_height), Image.ANTIALIAS)
+        image = image.resize((canvas_width, canvas_height), Image.LANCZOS)  # Změna na LANCZOS
 
         image = ImageTk.PhotoImage(image)
         self.canvas.create_image(0, 0, anchor=tk.NW, image=image)
@@ -211,7 +211,12 @@ class ObjectDetectionApp:
         # Rozpoznání objektů v obrázku
         if hasattr(self, "image"):
             results = self.model(self.image)
-            results.show()  # Zobrazení výsledků na obrázku
+            # Získání prvního obrázku z výsledků
+            if results:
+                detected_image = results.render()[0]  # Získání prvního rámce s detekovanými objekty
+                self.display_image(detected_image)  # Zobrazení detekovaného obrázku
+            else:
+                messagebox.showerror("Chyba", "Žádné objekty nebyly detekovány.")
         else:
             messagebox.showerror("Chyba", "Nejdříve načtěte obrázek nebo video!")
 
