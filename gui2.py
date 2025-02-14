@@ -1,13 +1,14 @@
 import tkinter as tk
-from tkinter import filedialog, messagebox, simpledialog
+from tkinter import filedialog, messagebox
 from PIL import Image, ImageTk
 import cv2
 import subprocess
 import threading
 import numpy as np
 import sys
-import matplotlib.pyplot as plt
+import torch
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import matplotlib.pyplot as plt
 
 class OutputRedirector:
     def __init__(self, text_widget):
@@ -124,15 +125,18 @@ class ObjectDetectionApp:
         root.grid_columnconfigure(0, weight=3)  # 3/5 pro obrazovku
         root.grid_columnconfigure(1, weight=2)  # 2/5 pro ovládací panel
 
+        # Inicializace YOLO modelu
+        self.model = torch.hub.load('/home/pi/maturitniprace/yolov8n.pt', 'custom')  # Načtení modelu
+
     def redirect_console_output(self):
         # Přesměrování konzolového výstupu do Text widgetu
         sys.stdout = OutputRedirector(self.console_output)
         self.run_command("echo Připojení k systému úspěšné")  # Simulace příkazu pro zobrazení výstupu
 
     def run_command(self, command):
-        # Spustí příkaz v PowerShellu a vypisuje jeho výstup do konzolového widgetu
+        # Spustí příkaz v bash a vypisuje jeho výstup do konzolového widgetu
         def execute():
-            process = subprocess.Popen(["powershell", "-Command", command], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            process = subprocess.Popen(["bash", "-c", command], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             for line in iter(process.stdout.readline, ""):
                 self.insert_to_console(line)
             for line in iter(process.stderr.readline, ""):
@@ -150,7 +154,7 @@ class ObjectDetectionApp:
         self.root.after(0, lambda: self.console_output.see(tk.END))
 
     def execute_command(self, event):
-        # Získá příkaz od uživatele a spustí ho v PowerShellu
+        # Získá příkaz od uživatele a spustí ho v bash
         command = self.console_input.get()
         if command.strip():
             self.console_output.insert(tk.END, f"> {command}\n")
@@ -166,90 +170,88 @@ class ObjectDetectionApp:
     def load_video(self):
         file_path = filedialog.askopenfilename(filetypes=[("Video Files", "*.mp4;*.avi")])
         if file_path:
-            self.video_capture = cv2.VideoCapture(file_path)
-            self.show_frame_video()
+            self.video = cv2.VideoCapture(file_path)
+            self.process_video()
 
     def start_camera(self):
-        self.cap = cv2.VideoCapture(0)  # 0 pro default kameru
-        self.show_frame()
+        self.capture = cv2.VideoCapture(0)
+        self.capture.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        self.capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        self.process_video()
 
-    def show_frame(self):
-        ret, frame = self.cap.read()
-        if ret:
-            self.display_image(frame)
-            self.root.after(10, self.show_frame)
+    def process_video(self):
+        # Zpracování videa a detekce objektů
+        if hasattr(self, "capture"):
+            ret, frame = self.capture.read()
+            if ret:
+                # Detekce objektů na snímku
+                results = self.model(frame)
+                frame = results.render()[0]  # Získání rámců s detekovanými objekty
 
-    def show_frame_video(self):
-        ret, frame = self.video_capture.read()
-        if ret:
-            self.display_image(frame)
-            self.root.after(10, self.show_frame_video)
-        else:
-            self.video_capture.release()
+                # Zobrazení výsledku na plátno
+                self.display_image(frame)
 
-    def display_image(self, img):
-        self.original_image = img.copy()  # Uložení originálního obrázku pro úpravy
+                self.root.after(10, self.process_video)
+
+    def display_image(self, image):
+        # Zobrazení obrázku na plátno
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        image = Image.fromarray(image)
+
+        # Změna velikosti obrázku na velikost plátna
         canvas_width = self.canvas.winfo_width()
         canvas_height = self.canvas.winfo_height()
+        image = image.resize((canvas_width, canvas_height), Image.ANTIALIAS)
 
-        img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        img_pil = Image.fromarray(img_rgb)
-        img_resized = img_pil.resize((canvas_width, canvas_height), Image.LANCZOS)
-        img_tk = ImageTk.PhotoImage(img_resized)
-
-        self.canvas.create_image(canvas_width // 2, canvas_height // 2, image=img_tk)
-        self.canvas.image = img_tk  # Prevent garbage collection
-
-    def create_chart(self):
-        self.figure, self.ax = plt.subplots(figsize=(4, 2))  # Menší graf
-        self.chart_canvas = FigureCanvasTkAgg(self.figure, master=self.chart_frame)
-        self.chart_canvas.get_tk_widget().pack(fill="both", expand=True)
-        self.chart_canvas.draw()
-
-    def update_chart(self, detections):
-        self.ax.clear()
-        if detections:
-            labels = [d['object'] for d in detections]
-            values = [d['confidence'] * 100 for d in detections]
-            self.ax.bar(labels, values, color='blue')
-            self.ax.set_ylim(0, 100)
-            self.ax.set_title('Detekce objektů')
-        self.chart_canvas.draw()
+        image = ImageTk.PhotoImage(image)
+        self.canvas.create_image(0, 0, anchor=tk.NW, image=image)
+        self.canvas.image = image
 
     def detect_objects(self):
-        # Tento příklad používá fiktivní detekce objektů
-        detections = [{'object': 'Pes', 'confidence': 0.95}, {'object': 'Kočka', 'confidence': 0.88}]
-        self.update_chart(detections)
-        self.display_detections_on_canvas(detections)
-
-    def display_detections_on_canvas(self, detections):
-        # Načteme výsledky a zobrazíme je na canvasu
-        for detection in detections:
-            label = detection['object']
-            confidence = detection['confidence'] * 100
-            self.canvas.create_text(10, 10, anchor="nw", text=f"{label}: {confidence:.2f}%", fill="white", font=("Helvetica", 12))
+        # Rozpoznání objektů v obrázku
+        if hasattr(self, "image"):
+            results = self.model(self.image)
+            results.show()  # Zobrazení výsledků na obrázku
+        else:
+            messagebox.showerror("Chyba", "Nejdříve načtěte obrázek nebo video!")
 
     def edit_image(self):
-        # Tato metoda je volána, když uživatel chce upravit obrázek
-        # Příklad úpravy: otočení obrázku
-        if hasattr(self, 'image'):
-            self.image = cv2.rotate(self.image, cv2.ROTATE_90_CLOCKWISE)
-            self.display_image(self.image)
+        # Funkce pro úpravy obrázku
+        if hasattr(self, "image"):
+            self.image = cv2.cvtColor(self.image, cv2.COLOR_BGR2RGB)
+            self.image = Image.fromarray(self.image)
+            self.image.show()  # Zobrazení upraveného obrázku
+        else:
+            messagebox.showerror("Chyba", "Nejdříve načtěte obrázek!")
+    
+    def create_chart(self):
+        # Vytvoření grafu pro ovládací panel
+        self.fig, self.ax = plt.subplots(figsize=(3, 2), dpi=80)
+        self.ax.set_facecolor("#f0f0f0")
+        self.ax.set_title("Ukázkový graf", fontsize=8)
+
+    def update_chart(self, data):
+        # Aktualizace grafu
+        self.ax.clear()
+        self.ax.plot(data, color='blue', linewidth=2)
+        self.fig.canvas.draw()
 
     def on_button_press(self, event):
-        self.start_x = event.x
-        self.start_y = event.y
+        # Zachycení stisknutí tlačítka pro výběr oblasti
+        self.x1, self.y1 = event.x, event.y
 
     def on_mouse_drag(self, event):
+        # Zachycení táhnutí myši pro výběr oblasti
+        self.x2, self.y2 = event.x, event.y
         self.canvas.delete("rect")
-        self.rect = self.canvas.create_rectangle(self.start_x, self.start_y, event.x, event.y, outline="red")
+        self.canvas.create_rectangle(self.x1, self.y1, self.x2, self.y2, outline="red", tags="rect")
 
     def on_button_release(self, event):
-        self.end_x = event.x
-        self.end_y = event.y
-        self.canvas.create_rectangle(self.start_x, self.start_y, self.end_x, self.end_y, outline="red")
+        # Zachycení uvolnění tlačítka pro dokončení výběru oblasti
+        self.x2, self.y2 = event.x, event.y
+        self.canvas.create_rectangle(self.x1, self.y1, self.x2, self.y2, outline="red")
 
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = ObjectDetectionApp(root)
-    root.mainloop()
+# Vytvoření hlavního okna aplikace
+root = tk.Tk()
+app = ObjectDetectionApp(root)
+root.mainloop()
